@@ -24,7 +24,6 @@ class Rock:
 
             pattern, parameters = compile_route(path)
 
-            pattern, parameters = compile_route(path)
 
             self.dynamic_routes.append(
                 (pattern, parameters, view)
