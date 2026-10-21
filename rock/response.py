@@ -37,7 +37,7 @@ class Dish(BaseResponse):
 
 
 
-class TemplateResponse(Dish):
+class Render(Dish):
     def __init__(
         self,
         template_name: str,
@@ -59,3 +59,7 @@ class TemplateResponse(Dish):
             headers=template.headers,
             body=template.body,
         )
+
+class Redirect(Dish):
+    def __init__(self, path:str)->None:
+        super().__init__(302, {"Location":path}, {})
