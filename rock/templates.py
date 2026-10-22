@@ -1,7 +1,7 @@
 
 import ast
 import re
-
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -131,9 +131,12 @@ class Template:
                     raise ValueError(f"Invalid for tag: {tag}")
 
                 variable, expression = match.groups()
-                body, index, _ = self._parse(
-                    tokens, index + 1, {"enfor", "endfor"}
+                body, index, ending = self._parse(
+                    tokens, index + 1, {"endfor"}
                 )
+
+                if ending is None:
+                    raise ValueError("Missing 'endfor' tag.")
                 nodes.append(("for", variable, expression, body))
                 continue
 
@@ -160,8 +163,11 @@ class Template:
 
             elif kind == "variable":
                 value = self._evaluate(node[1], context)
-                output.append(str(value if value is not None else ""))
-
+                output.append(
+                    escape(str(value), quote=True)
+                    if value is not None
+                    else ""
+                )
             elif kind == "if":
                 _, condition, yes, no = node
                 branch = yes if self._evaluate(condition, context) else no
@@ -228,10 +234,14 @@ class Template:
 
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
             return not self._eval_node(node.operand, context)
-
         if isinstance(node, ast.BoolOp):
             values = [self._eval_node(v, context) for v in node.values]
 
+            if isinstance(node.op, ast.And):
+                return all(values)
+
+            if isinstance(node.op, ast.Or):
+                return any(values)
             if isinstance(node.op, ast.And):
                 return all(values)
 

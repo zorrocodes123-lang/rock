@@ -2,32 +2,77 @@
 import re
 
 
-def compile_route(path: str):
+def compile_route(path: str) -> tuple[re.Pattern, list[str]]:
+    if not isinstance(path, str) or not path.startswith("/"):
+        raise ValueError("Route paths must start with '/'.")
+
     parameters = []
+    parameter_names = set()
+    pattern = "^"
 
-    optional_match = re.search(r"\[<(\w+)>\]", path)
-    optional_parameter = None
+    if path == "/":
+        return re.compile(r"^/$"), parameters
 
-    if optional_match:
-        optional_parameter = optional_match.group(1)
-        path = path[:optional_match.start()] + path[optional_match.end():]
+    segments = path[1:].split("/")
 
-    pattern = re.sub(
-        r"<(\w+)>",
-        lambda match: _replace_parameter(match, parameters),
-        path,
-    )
+    if segments[-1] == "":
+        segments.pop()
 
-    if optional_parameter:
-        parameters.append(optional_parameter)
-        pattern = pattern.rstrip("/") + (
-            f"(?:/(?P<{optional_parameter}>[^/]+))?"
-        )
+    for segment in segments:
+        optional_match = re.fullmatch(r"\[<(\w+)>\]", segment)
 
-    return re.compile(f"^{pattern}/?$"), parameters
+        if optional_match:
+            name = optional_match.group(1)
+
+            if name in parameter_names:
+                raise ValueError(
+                    f"Duplicate route parameter: '{name}'."
+                )
+
+            parameter_names.add(name)
+            parameters.append(name)
+
+            pattern += f"(?:/(?P<{name}>[^/]+))?"
+            continue
+
+        pattern += "/"
+
+        def replace_parameter(match: re.Match) -> str:
+            name = match.group(1)
+
+            if name in parameter_names:
+                raise ValueError(
+                    f"Duplicate route parameter: '{name}'."
+                )
+
+            parameter_names.add(name)
+            parameters.append(name)
+
+            return f"(?P<{name}>[^/]+)"
+
+        parts = re.split(r"(<\w+>)", segment)
+
+        for part in parts:
+            match = re.fullmatch(r"<(\w+)>", part)
+
+            if match:
+                pattern += replace_parameter(match)
+            else:
+                pattern += re.escape(part)
+
+    pattern += "/?$"
+
+    return re.compile(pattern), parameters
 
 
-def _replace_parameter(match, parameters: list[str]) -> str:
+def _replace_parameter(
+    match: re.Match,
+    parameters: list[str],
+) -> str:
     name = match.group(1)
+
+    if name in parameters:
+        raise ValueError(f"Duplicate route parameter: '{name}'.")
+
     parameters.append(name)
     return f"(?P<{name}>[^/]+)"

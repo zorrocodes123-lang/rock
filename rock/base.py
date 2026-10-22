@@ -1,9 +1,11 @@
 from typing import Any, Callable
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .request  import *
 from .response import *
 from .views import *
 from .routing import *
+from urllib.parse import urlsplit
+import json
 
 class Rock:
     '''Base class for the application.'''
@@ -15,19 +17,29 @@ class Rock:
         self.dynamic_routes = []
 
     def carve(self, routes: dict[str, type[View]]) -> None:
-        assert isinstance(routes, dict), "Routes must be a dictionary."
+        if not isinstance(routes, dict):
+            raise TypeError("Routes must be a dictionary.")
 
         for path, view in routes.items():
+            if not isinstance(path, str):
+                raise TypeError("Route path must be a string.")
+
+            if not isinstance(view, type) or not issubclass(view, View):
+                raise TypeError("Route view must be a View subclass.")
+
+            if not path.startswith("/"):
+                raise ValueError("Route path must start with '/'.")
+
             if "<" not in path:
                 self.routes[path] = view
                 continue
 
             pattern, parameters = compile_route(path)
 
-
             self.dynamic_routes.append(
                 (pattern, parameters, view)
             )
+
     def resolve(self, path: str):
         if path in self.routes:
             return self.routes[path], {}
@@ -58,12 +70,24 @@ class Rock:
         try:
             class Handler(BaseHTTPRequestHandler):
                 def _handle(self):
-                    length = int(self.headers.get("Content-Length", 0))
-                    body = self.rfile.read(length)
+                    try:
+                        length = int(self.headers.get("Content-Length", 0))
+                    except ValueError:
+                        self.send_error(400, "Invalid Content-Length")
+                        return
 
+                    if length < 0:
+                        self.send_error(400, "Invalid Content-Length")
+                        return
+
+                    if length > 10 * 1024 * 1024:
+                        self.send_error(413, "Request body too large")
+                        return
+
+                    body = self.rfile.read(length)
                     request = Order(
-                        self.path,
-                        self.headers,
+                        urlsplit(self.path).path,
+                        dict(self.headers.items()),
                         body,
                         self.command,
                     )
@@ -75,11 +99,12 @@ class Rock:
 
                     response = app.make(request)
 
-                    response_body = (
-                        response.body
-                        if isinstance(response.body, bytes)
-                        else str(response.body).encode("utf-8")
-                    )
+                    if isinstance(response.body, bytes):
+                        response_body = response.body
+                    elif isinstance(response.body, str):
+                        response_body = response.body.encode("utf-8")
+                    else:
+                        response_body = json.dumps(response.body).encode("utf-8")
 
                     self.send_response(response.status_code)
 
@@ -104,12 +129,9 @@ class Rock:
                 do_PATCH = _handle
                 do_DELETE = _handle
 
-            server = HTTPServer((host, port), Handler)
+            server = ThreadingHTTPServer((host, port), Handler)
             print(f"[{self.name}] Running at http://{host}:{port}")
             server.serve_forever()
-        except KeyboardInterrupt as k:
-            import sys
-            sys.exit(1)
-        except Exception as e:
-            print(e)
+        except KeyboardInterrupt:
+            print(f"\n[{self.name}] Server stopped.")
 
