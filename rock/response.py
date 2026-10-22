@@ -1,6 +1,4 @@
-
 from typing import Any, TypeAlias
-
 
 JSONValue: TypeAlias = (
     str | int | float | bool | None
