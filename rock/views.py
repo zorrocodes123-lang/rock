@@ -4,30 +4,26 @@ from .request import Order
 
 
 class View:
-    def __init__(self, Order: Order) -> None:
-        self.Order = Order
-
+    def __init__(self, request: Order) -> None:
+        self.request = request
 
     def dispatch(self, **parameters: str) -> Dish:
-        method = self.Order.method.upper()
+        method = self.request.method.upper()
+        allowed = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+        methods = allowed | {"HEAD", "OPTIONS"}
 
-        allowed_methods = {
-            "GET",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-            "HEAD",
-            "OPTIONS",
-        }
+        if method not in methods:
+            return Dish(405, {"Allow": ", ".join(sorted(methods)),}, "Method Not Allowed")
 
-        if method not in allowed_methods:
-            return Dish(405, {"Allow": ", ".join(sorted(allowed_methods))},
-                        "Method not allowed")
+        if method == "OPTIONS":
+            return Dish(204, {"Allow": ", ".join(sorted(methods))})
 
         handler = getattr(self, method.lower(), None)
 
-        if handler is None or not callable(handler):
-            return Dish(405, {}, "Method not allowed")
+        if method == "HEAD" and not callable(handler):
+            handler = getattr(self, "get", None)
+
+        if not callable(handler):
+            return Dish(405, {"Allow": ", ".join(sorted(methods))}, "Method Not Allowed")
 
         return handler(**parameters)
